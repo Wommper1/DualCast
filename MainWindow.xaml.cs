@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _reconnectTimer;
     private AppSettings _settings = new();
     private bool _initializing = true;
+    private bool _refreshing;
     private bool _wantedRunning;
     private bool _calibrating;
     private CancellationTokenSource? _calibrationCancellation;
@@ -59,6 +60,7 @@ public partial class MainWindow : Window
         VolumeASlider.Value = Math.Clamp(_settings.VolumeAPercent, 0, 100);
         VolumeBSlider.Value = Math.Clamp(_settings.VolumeBPercent, 0, 100);
         AutoReconnectCheck.IsChecked = _settings.AutoReconnect;
+        ShowUnavailableCheck.IsChecked = _settings.ShowUnavailableDevices;
         SelectLatency(_settings.RenderLatencyMilliseconds);
         RefreshDeviceLists();
         UpdateValueLabels();
@@ -69,18 +71,31 @@ public partial class MainWindow : Window
 
     private void RefreshDeviceLists()
     {
-        var devices = DualAudioRouter.GetActiveRenderDevices();
-        var oldA = SelectedId(OutputACombo) ?? _settings.OutputADeviceId;
-        var oldB = SelectedId(OutputBCombo) ?? _settings.OutputBDeviceId;
-        OutputACombo.ItemsSource = devices;
-        OutputBCombo.ItemsSource = devices;
-        var outputAId = ExistingId(devices, oldA) ?? devices.FirstOrDefault(device => device.IsDefault)?.Id ?? devices.FirstOrDefault()?.Id;
-        var outputBId = ExistingId(devices, oldB) ?? devices.FirstOrDefault(device => device.Id != outputAId)?.Id;
-        OutputACombo.SelectedValue = outputAId;
-        OutputBCombo.SelectedValue = outputBId;
-        DiagnosticText.Text = devices.Count == 0
-            ? "No active playback devices were found. Pair and connect both Bluetooth devices in Windows, then refresh."
-            : $"Found {devices.Count} active playback device{(devices.Count == 1 ? "" : "s")}.";
+        var devices = DualAudioRouter.GetRenderDevices(_settings.FavoriteDeviceIds, ShowUnavailableCheck.IsChecked == true);
+        // The saved choice wins over the on-screen fallback so a temporarily missing device is not forgotten.
+        var oldA = _settings.OutputADeviceId ?? SelectedId(OutputACombo);
+        var oldB = _settings.OutputBDeviceId ?? SelectedId(OutputBCombo);
+        _refreshing = true;
+        try
+        {
+            OutputACombo.ItemsSource = devices;
+            OutputBCombo.ItemsSource = devices;
+            var outputAId = ExistingId(devices, oldA)
+                ?? devices.FirstOrDefault(device => device.IsActive && device.IsDefault)?.Id
+                ?? devices.FirstOrDefault(device => device.IsActive)?.Id;
+            var outputBId = ExistingId(devices, oldB)
+                ?? devices.FirstOrDefault(device => device.IsActive && device.Id != outputAId)?.Id;
+            OutputACombo.SelectedValue = outputAId;
+            OutputBCombo.SelectedValue = outputBId;
+        }
+        finally { _refreshing = false; }
+        UpdateFavoriteButtons();
+        var activeCount = devices.Count(device => device.IsActive);
+        var unavailableCount = devices.Count - activeCount;
+        DiagnosticText.Text = activeCount == 0
+            ? "No connected playback devices were found. Connect the earbuds in Windows Bluetooth settings, then refresh."
+            : $"Found {activeCount} connected device{(activeCount == 1 ? "" : "s")}" +
+              (unavailableCount > 0 ? $" and {unavailableCount} disconnected device{(unavailableCount == 1 ? "" : "s")}." : ".");
     }
 
     private static string? ExistingId(IReadOnlyList<AudioDeviceInfo> devices, string? id) =>
@@ -88,16 +103,66 @@ public partial class MainWindow : Window
 
     private static string? SelectedId(ComboBox comboBox) => comboBox.SelectedValue as string;
 
+    private static AudioDeviceInfo? SelectedDevice(ComboBox comboBox) => comboBox.SelectedItem as AudioDeviceInfo;
+
     private void RefreshDevices_Click(object sender, RoutedEventArgs e)
     {
         try { RefreshDeviceLists(); QueueSave(); }
         catch (Exception ex) { SetStatus("Device scan failed", ex.Message, "#FF6B7A"); }
     }
 
+    private void ShowUnavailable_Click(object sender, RoutedEventArgs e)
+    {
+        if (_initializing)
+            return;
+        _settings.ShowUnavailableDevices = ShowUnavailableCheck.IsChecked == true;
+        RefreshDeviceLists();
+        QueueSave();
+    }
+
+    private void FavoriteA_Click(object sender, RoutedEventArgs e) => ToggleFavorite(OutputACombo);
+
+    private void FavoriteB_Click(object sender, RoutedEventArgs e) => ToggleFavorite(OutputBCombo);
+
+    private void ToggleFavorite(ComboBox comboBox)
+    {
+        var device = SelectedDevice(comboBox);
+        if (device is null)
+            return;
+
+        if (_settings.FavoriteDeviceIds.Contains(device.Id, StringComparer.Ordinal))
+            _settings.FavoriteDeviceIds.RemoveAll(id => string.Equals(id, device.Id, StringComparison.Ordinal));
+        else
+            _settings.FavoriteDeviceIds.Add(device.Id);
+
+        RefreshDeviceLists();
+        QueueSave();
+    }
+
+    private void UpdateFavoriteButtons()
+    {
+        UpdateFavoriteButton(FavoriteAButton, SelectedDevice(OutputACombo));
+        UpdateFavoriteButton(FavoriteBButton, SelectedDevice(OutputBCombo));
+    }
+
+    private void UpdateFavoriteButton(Button button, AudioDeviceInfo? device)
+    {
+        button.IsEnabled = device is not null && !_router.IsRunning;
+        button.Content = device is not null && _settings.FavoriteDeviceIds.Contains(device.Id, StringComparer.Ordinal)
+            ? "★ Favorite"
+            : "☆ Favorite";
+    }
+
     private void OpenSoundSettings_Click(object sender, RoutedEventArgs e)
     {
         try { Process.Start(new ProcessStartInfo("ms-settings:sound") { UseShellExecute = true }); }
         catch (Exception ex) { SetStatus("Could not open Settings", ex.Message, "#FF6B7A"); }
+    }
+
+    private void OpenBluetoothSettings_Click(object sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo("ms-settings:bluetooth") { UseShellExecute = true }); }
+        catch (Exception ex) { SetStatus("Could not open Bluetooth Settings", ex.Message, "#FF6B7A"); }
     }
 
     private void Settings_Click(object sender, RoutedEventArgs e) => SettingsPopup.IsOpen = !SettingsPopup.IsOpen;
@@ -146,6 +211,7 @@ public partial class MainWindow : Window
         try
         {
             StartButton.IsEnabled = false;
+            CommitOutputSelection();
             SetStatus("Starting", "Opening both Bluetooth endpoints and the protected system-audio capture path…", "#60D2FF");
             await _router.StartAsync(options!);
             _wantedRunning = true;
@@ -193,6 +259,7 @@ public partial class MainWindow : Window
         SetStatus("Calibrating", "Listen for four short pulses from both devices.", "#56C7FF");
         try
         {
+            CommitOutputSelection();
             SaveSettings();
             await _router.PlayCalibrationAsync(options!, _calibrationCancellation.Token);
             SetStatus("Calibration finished", "If one device sounded first, add delay to that device and test again.", "#41D99A");
@@ -218,9 +285,13 @@ public partial class MainWindow : Window
 
     private void Router_Faulted(object? sender, string message)
     {
-        Dispatcher.BeginInvoke(() =>
+        Dispatcher.BeginInvoke(async () =>
         {
-            _router.Stop();
+            // Several callbacks can fault together; only the first one tears down.
+            if (!_router.IsRunning)
+                return;
+            // Stop off the UI thread: it waits on the lifecycle gate, which StartAsync may hold.
+            await Task.Run(_router.Stop);
             SetStreamingUi(false);
             SetStatus("Connection lost", message, "#FF6B7A");
             if (_wantedRunning && AutoReconnectCheck.IsChecked == true)
@@ -270,6 +341,11 @@ public partial class MainWindow : Window
             message = "Select two connected output devices.";
             return false;
         }
+        if (SelectedDevice(OutputACombo)?.IsActive != true || SelectedDevice(OutputBCombo)?.IsActive != true)
+        {
+            message = "Both selected devices must show as connected. Open Bluetooth devices, connect the earbuds, then refresh.";
+            return false;
+        }
         if (outputA == outputB)
         {
             message = "Choose two different output devices.";
@@ -288,6 +364,12 @@ public partial class MainWindow : Window
         CalibrationButton.IsEnabled = !streaming && !_calibrating;
         OutputACombo.IsEnabled = !streaming;
         OutputBCombo.IsEnabled = !streaming;
+        FavoriteAButton.IsEnabled = !streaming && SelectedDevice(OutputACombo) is not null;
+        FavoriteBButton.IsEnabled = !streaming && SelectedDevice(OutputBCombo) is not null;
+        DelayASlider.IsEnabled = !streaming;
+        DelayBSlider.IsEnabled = !streaming;
+        ResetCalibrationButton.IsEnabled = !streaming;
+        ShowUnavailableCheck.IsEnabled = !streaming;
         LatencyCombo.IsEnabled = !streaming;
     }
 
@@ -319,7 +401,21 @@ public partial class MainWindow : Window
         VolumeBText.Text = $"{VolumeBSlider.Value:0}%";
     }
 
-    private void SettingChanged(object sender, SelectionChangedEventArgs e) => QueueSave();
+    private void SettingChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateFavoriteButtons();
+        if (_refreshing || _initializing)
+            return;
+        if (ReferenceEquals(sender, OutputACombo)) _settings.OutputADeviceId = SelectedId(OutputACombo);
+        else if (ReferenceEquals(sender, OutputBCombo)) _settings.OutputBDeviceId = SelectedId(OutputBCombo);
+        QueueSave();
+    }
+
+    private void CommitOutputSelection()
+    {
+        _settings.OutputADeviceId = SelectedId(OutputACombo);
+        _settings.OutputBDeviceId = SelectedId(OutputBCombo);
+    }
     private void SettingChanged_Click(object sender, RoutedEventArgs e) => QueueSave();
 
     private void QueueSave()
@@ -334,14 +430,13 @@ public partial class MainWindow : Window
     private void SaveSettings()
     {
         if (_initializing) return;
-        _settings.OutputADeviceId = SelectedId(OutputACombo);
-        _settings.OutputBDeviceId = SelectedId(OutputBCombo);
         _settings.DelayAMilliseconds = (int)DelayASlider.Value;
         _settings.DelayBMilliseconds = (int)DelayBSlider.Value;
         _settings.VolumeAPercent = (int)VolumeASlider.Value;
         _settings.VolumeBPercent = (int)VolumeBSlider.Value;
         _settings.RenderLatencyMilliseconds = SelectedLatency();
         _settings.AutoReconnect = AutoReconnectCheck.IsChecked == true;
+        _settings.ShowUnavailableDevices = ShowUnavailableCheck.IsChecked == true;
         ReadAppearanceSettings();
         try { _settingsService.Save(_settings); }
         catch (Exception ex) { DiagnosticText.Text = $"Settings could not be saved: {ex.Message}"; }

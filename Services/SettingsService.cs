@@ -25,15 +25,24 @@ public sealed class SettingsService
             var json = File.ReadAllText(_settingsPath);
             var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
             using var document = JsonDocument.Parse(json);
-            var isOlderSettings = !document.RootElement.TryGetProperty(nameof(AppSettings.SettingsVersion), out var version)
-                || version.GetInt32() < 2;
-            if (isOlderSettings)
+            var loadedVersion = document.RootElement.TryGetProperty(nameof(AppSettings.SettingsVersion), out var version)
+                && version.ValueKind == JsonValueKind.Number
+                && version.TryGetInt32(out var parsedVersion)
+                    ? parsedVersion
+                    : 0;
+            if (loadedVersion < 2)
             {
                 settings.SettingsVersion = 2;
                 settings.Theme = "Graphite";
                 settings.TextSize = 16;
                 settings.HighVisibility = true;
             }
+            if (loadedVersion < 3)
+            {
+                settings.SettingsVersion = 3;
+                settings.ShowUnavailableDevices = true;
+            }
+            settings.FavoriteDeviceIds ??= [];
             return settings;
         }
         catch
@@ -47,6 +56,9 @@ public sealed class SettingsService
         var directory = Path.GetDirectoryName(_settingsPath)!;
         Directory.CreateDirectory(directory);
         var json = JsonSerializer.Serialize(settings, JsonOptions);
-        File.WriteAllText(_settingsPath, json);
+        // Write beside the target then swap, so a crash mid-write can't leave a truncated settings file.
+        var tempPath = _settingsPath + ".tmp";
+        File.WriteAllText(tempPath, json);
+        File.Move(tempPath, _settingsPath, overwrite: true);
     }
 }

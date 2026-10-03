@@ -136,7 +136,10 @@
                             <TextBlock Margin="0,5,0,0" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap"
                                        Text="No capture-source juggling or silent speaker endpoint required. Audio produced by DualCast itself is excluded from capture." />
                         </StackPanel>
-                        <Button Grid.Column="1" Style="{StaticResource QuietButton}" Margin="18,0,0,0" VerticalAlignment="Center" Click="OpenSoundSettings_Click" Content="Windows sound settings" />
+                        <StackPanel Grid.Column="1" Margin="18,0,0,0" VerticalAlignment="Center">
+                            <Button Style="{StaticResource QuietButton}" Click="OpenBluetoothSettings_Click" Content="Bluetooth devices" />
+                            <Button Style="{StaticResource QuietButton}" Margin="0,8,0,0" Click="OpenSoundSettings_Click" Content="Windows sound settings" />
+                        </StackPanel>
                     </Grid>
                 </Border>
 
@@ -148,7 +151,10 @@
                                 <TextBlock Style="{StaticResource SectionTitle}" Text="Choose outputs" />
                                 <TextBlock Foreground="{DynamicResource MutedBrush}" Text="Both devices must be paired, connected, and available as Windows playback endpoints." />
                             </StackPanel>
-                            <Button Grid.Column="1" Style="{StaticResource QuietButton}" Click="RefreshDevices_Click" Content="↻  Refresh devices" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <CheckBox x:Name="ShowUnavailableCheck" Margin="0,0,16,0" Content="Show disconnected" Click="ShowUnavailable_Click" />
+                                <Button Style="{StaticResource QuietButton}" Click="RefreshDevices_Click" Content="↻  Refresh devices" />
+                            </StackPanel>
                         </Grid>
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -158,7 +164,11 @@
                                         <Border Width="28" Height="28" Background="#126C94" CornerRadius="8" Margin="0,0,10,0"><TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Text="A" /></Border>
                                         <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="First Bluetooth output" />
                                     </StackPanel>
-                                    <TextBlock Style="{StaticResource FieldLabel}" Text="PLAYBACK DEVICE" />
+                                    <Grid>
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="PLAYBACK DEVICE" />
+                                        <Button x:Name="FavoriteAButton" HorizontalAlignment="Right" Style="{StaticResource QuietButton}" MinHeight="30" Padding="9,4"
+                                                Click="FavoriteA_Click" Content="☆ Favorite" automation:AutomationProperties.Name="Favorite output A device" />
+                                    </Grid>
                                     <ComboBox x:Name="OutputACombo" DisplayMemberPath="DisplayName" SelectedValuePath="Id" SelectionChanged="SettingChanged"
                                               automation:AutomationProperties.Name="Output A playback device" />
                                     <Grid Margin="0,18,0,4"><TextBlock Text="Volume" FontWeight="SemiBold" /><TextBlock x:Name="VolumeAText" HorizontalAlignment="Right" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" /></Grid>
@@ -172,7 +182,11 @@
                                         <Border Width="28" Height="28" Background="#3164B4" CornerRadius="8" Margin="0,0,10,0"><TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" Text="B" /></Border>
                                         <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="Second Bluetooth output" />
                                     </StackPanel>
-                                    <TextBlock Style="{StaticResource FieldLabel}" Text="PLAYBACK DEVICE" />
+                                    <Grid>
+                                        <TextBlock Style="{StaticResource FieldLabel}" Text="PLAYBACK DEVICE" />
+                                        <Button x:Name="FavoriteBButton" HorizontalAlignment="Right" Style="{StaticResource QuietButton}" MinHeight="30" Padding="9,4"
+                                                Click="FavoriteB_Click" Content="☆ Favorite" automation:AutomationProperties.Name="Favorite output B device" />
+                                    </Grid>
                                     <ComboBox x:Name="OutputBCombo" DisplayMemberPath="DisplayName" SelectedValuePath="Id" SelectionChanged="SettingChanged"
                                               automation:AutomationProperties.Name="Output B playback device" />
                                     <Grid Margin="0,18,0,4"><TextBlock Text="Volume" FontWeight="SemiBold" /><TextBlock x:Name="VolumeBText" HorizontalAlignment="Right" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" /></Grid>
@@ -203,7 +217,7 @@
                         </Grid>
                         <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
                             <Button x:Name="CalibrationButton" Click="Calibration_Click" Content="▶  Play sync test" />
-                            <Button Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="ResetCalibration_Click" Content="Reset delays" />
+                            <Button x:Name="ResetCalibrationButton" Margin="10,0,0,0" Style="{StaticResource SecondaryButton}" Click="ResetCalibration_Click" Content="Reset delays" />
                         </StackPanel>
                     </StackPanel>
                 </Border>

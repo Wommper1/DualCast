@@ -46,23 +46,56 @@ public sealed class DualAudioRouter : IDisposable
         }
     }
 
-    public static IReadOnlyList<AudioDeviceInfo> GetActiveRenderDevices()
+    public static IReadOnlyList<AudioDeviceInfo> GetRenderDevices(IEnumerable<string>? favoriteDeviceIds, bool includeUnavailable)
     {
         using var enumerator = new MMDeviceEnumerator();
+        var favorites = new HashSet<string>(favoriteDeviceIds ?? [], StringComparer.Ordinal);
         string? defaultId = null;
         try { defaultId = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia).ID; }
         catch { }
 
-        var endpoints = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
-        var devices = endpoints
-            .Select(device => new AudioDeviceInfo(device.ID, device.FriendlyName, device.ID == defaultId))
-            .OrderByDescending(device => device.IsDefault)
+        var endpoints = enumerator.EnumerateAudioEndPoints(
+            DataFlow.Render,
+            includeUnavailable ? DeviceState.All : DeviceState.Active);
+        var devices = new List<AudioDeviceInfo>();
+        foreach (var endpoint in endpoints)
+        {
+            try
+            {
+                var state = endpoint.State;
+                devices.Add(new AudioDeviceInfo(
+                    endpoint.ID,
+                    endpoint.FriendlyName,
+                    endpoint.ID == defaultId,
+                    state == DeviceState.Active,
+                    favorites.Contains(endpoint.ID),
+                    DeviceStateLabel(state)));
+            }
+            catch
+            {
+                // A stale driver endpoint can disappear while Windows is enumerating it.
+            }
+            finally
+            {
+                endpoint.Dispose();
+            }
+        }
+
+        return devices
+            .OrderByDescending(device => device.IsFavorite)
+            .ThenByDescending(device => device.IsActive)
+            .ThenByDescending(device => device.IsDefault)
             .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
-        foreach (var endpoint in endpoints)
-            endpoint.Dispose();
-        return devices;
     }
+
+    private static string DeviceStateLabel(DeviceState state) => state switch
+    {
+        DeviceState.Disabled => "disabled",
+        DeviceState.Unplugged => "disconnected",
+        DeviceState.NotPresent => "not connected",
+        _ => "unavailable"
+    };
 
     public async Task StartAsync(RoutingOptions options)
     {
@@ -225,8 +258,11 @@ public sealed class DualAudioRouter : IDisposable
 
     private void Output_PlaybackStopped(object? sender, StoppedEventArgs e)
     {
-        if (!_stopping && e.Exception is not null)
-            RaiseFault(e.Exception.Message);
+        // StopCore unsubscribes before stopping, so any stop seen here is unexpected, with or without an error.
+        if (_stopping)
+            return;
+        var name = ReferenceEquals(sender, _outputA) ? "Output A" : ReferenceEquals(sender, _outputB) ? "Output B" : "An output";
+        RaiseFault(e.Exception?.Message ?? $"{name} stopped playing unexpectedly.");
     }
 
     private void RaiseFault(string message) => Faulted?.Invoke(this, message);

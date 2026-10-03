@@ -2,7 +2,7 @@ namespace DualBluetooth.Models;
 
 public sealed class AppSettings
 {
-    public int SettingsVersion { get; set; } = 2;
+    public int SettingsVersion { get; set; } = 3;
     public string? OutputADeviceId { get; set; }
     public string? OutputBDeviceId { get; set; }
     public int DelayAMilliseconds { get; set; }
@@ -11,6 +11,8 @@ public sealed class AppSettings
     public int VolumeBPercent { get; set; } = 100;
     public int RenderLatencyMilliseconds { get; set; } = 100;
     public bool AutoReconnect { get; set; } = true;
+    public bool ShowUnavailableDevices { get; set; } = true;
+    public List<string> FavoriteDeviceIds { get; set; } = [];
     public string Theme { get; set; } = "Graphite";
     public string Accent { get; set; } = "Ocean";
     public int TextSize { get; set; } = 16;
