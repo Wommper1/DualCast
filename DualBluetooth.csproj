@@ -12,6 +12,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="tests/**" />
+    <InternalsVisibleTo Include="DualBluetooth.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Resource Include="app.ico" />
   </ItemGroup>
 

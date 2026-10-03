@@ -51,4 +51,6 @@ dotnet build DualBluetooth.slnx -c Release --no-restore
 dotnet publish DualBluetooth.csproj -c Release --no-restore -o dist/DualCast
 ```
 
+Run the tests with `dotnet test tests/DualBluetooth.Tests`. They cover settings migration and saving, calibration-signal timing, input validation, drift correction, and device ordering. Streaming itself needs real Bluetooth hardware and is not covered.
+
 The app uses WPF on .NET 10 and NAudio 3's modern WASAPI recorder/player APIs. Capture and rendering use event-driven callbacks and MMCSS audio-thread priority. Shared-mode WASAPI performs output-format conversion for different devices.

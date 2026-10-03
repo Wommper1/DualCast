@@ -10,10 +10,12 @@ public sealed class SettingsService
     private readonly string _settingsPath;
 
     public SettingsService()
+        : this(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DualBluetooth", "settings.json"))
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _settingsPath = Path.Combine(appData, "DualBluetooth", "settings.json");
     }
+
+    public SettingsService(string settingsPath) => _settingsPath = settingsPath;
 
     public AppSettings Load()
     {

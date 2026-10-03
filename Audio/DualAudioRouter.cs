@@ -27,7 +27,7 @@ public sealed class DualAudioRouter : IDisposable
     private long _driftDropCount;
 
     // How far past its starting level a queue may grow before incoming audio is dropped.
-    private const double MaxDriftMilliseconds = 120;
+    internal const double MaxDriftMilliseconds = 120;
 
     public event EventHandler<string>? Faulted;
 
@@ -90,13 +90,16 @@ public sealed class DualAudioRouter : IDisposable
             }
         }
 
-        return devices
+        return OrderDevices(devices);
+    }
+
+    internal static IReadOnlyList<AudioDeviceInfo> OrderDevices(IEnumerable<AudioDeviceInfo> devices) =>
+        devices
             .OrderByDescending(device => device.IsFavorite)
             .ThenByDescending(device => device.IsActive)
             .ThenByDescending(device => device.IsDefault)
             .ThenBy(device => device.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
-    }
 
     private static string DeviceStateLabel(DeviceState state) => state switch
     {
@@ -225,7 +228,7 @@ public sealed class DualAudioRouter : IDisposable
             .WithCategory(AudioStreamCategory.Media)
             .Build();
 
-    private static void ValidateOutputs(RoutingOptions options)
+    internal static void ValidateOutputs(RoutingOptions options)
     {
         if (string.IsNullOrWhiteSpace(options.OutputADeviceId) || string.IsNullOrWhiteSpace(options.OutputBDeviceId))
             throw new InvalidOperationException("Select two output devices.");
@@ -235,7 +238,7 @@ public sealed class DualAudioRouter : IDisposable
             throw new InvalidOperationException("Calibration delays must be between 0 and 2000 milliseconds.");
     }
 
-    private static BufferedWaveProvider CreateBuffer(WaveFormat format, double delayMilliseconds)
+    internal static BufferedWaveProvider CreateBuffer(WaveFormat format, double delayMilliseconds)
     {
         var buffer = new BufferedWaveProvider(format, TimeSpan.FromSeconds(12))
         {
@@ -265,7 +268,7 @@ public sealed class DualAudioRouter : IDisposable
     }
 
     // An output slower than the capture clock lets its queue grow without bound; skip a packet to pull it back.
-    private static bool AddUnlessDrifted(BufferedWaveProvider? queue, double targetMilliseconds, ReadOnlySpan<byte> buffer)
+    internal static bool AddUnlessDrifted(BufferedWaveProvider? queue, double targetMilliseconds, ReadOnlySpan<byte> buffer)
     {
         if (queue is null)
             return false;
@@ -344,7 +347,7 @@ public sealed class DualAudioRouter : IDisposable
 
     private static float ClampVolume(float volume) => Math.Clamp(volume, 0f, 1f);
 
-    private static byte[] CreateCalibrationSignal(WaveFormat format, int delayMilliseconds, float volume)
+    internal static byte[] CreateCalibrationSignal(WaveFormat format, int delayMilliseconds, float volume)
     {
         const int contentMilliseconds = 2400;
         var frameCount = (int)(format.SampleRate * (delayMilliseconds + contentMilliseconds) / 1000d);
