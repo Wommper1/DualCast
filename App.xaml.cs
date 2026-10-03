@@ -1,4 +1,5 @@
 using System.Windows;
+using DualBluetooth.Services;
 
 namespace DualBluetooth;
 
@@ -14,6 +15,7 @@ public partial class App : Application
     {
         DispatcherUnhandledException += (_, args) =>
         {
+            AppLog.Error("Unhandled UI exception", args.Exception);
             MessageBox.Show(args.Exception.GetBaseException().Message, "DualCast error", MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };
@@ -34,11 +36,13 @@ public partial class App : Application
             _activateEvent,
             (_, _) => Dispatcher.BeginInvoke(ActivateMainWindow),
             null, Timeout.Infinite, executeOnlyOnce: false);
+        AppLog.Info($"DualCast started (pid {Environment.ProcessId}, {Environment.OSVersion.Version})");
         base.OnStartup(e);
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        AppLog.Info("DualCast exiting");
         _activateWait?.Unregister(null);
         _activateEvent?.Dispose();
         if (_instanceMutex is not null)

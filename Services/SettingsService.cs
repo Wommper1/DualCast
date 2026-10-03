@@ -45,8 +45,9 @@ public sealed class SettingsService
             settings.FavoriteDeviceIds ??= [];
             return settings;
         }
-        catch
+        catch (Exception ex)
         {
+            AppLog.Error("Settings load failed; using defaults", ex);
             return new AppSettings();
         }
     }

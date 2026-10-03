@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _diagnosticTimer;
     private readonly DispatcherTimer _saveTimer;
     private readonly DispatcherTimer _reconnectTimer;
+    private readonly DispatcherTimer _deviceChangeTimer;
     private AppSettings _settings = new();
     private bool _initializing = true;
     private bool _refreshing;
@@ -39,6 +40,7 @@ public partial class MainWindow : Window
         _diagnosticTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, DiagnosticTimer_Tick, Dispatcher);
         _saveTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(450), DispatcherPriority.Background, SaveTimer_Tick, Dispatcher) { IsEnabled = false };
         _reconnectTimer = new DispatcherTimer(TimeSpan.FromSeconds(5), DispatcherPriority.Background, ReconnectTimer_Tick, Dispatcher) { IsEnabled = false };
+        _deviceChangeTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(400), DispatcherPriority.Background, DeviceChangeTimer_Tick, Dispatcher) { IsEnabled = false };
         _router.Faulted += Router_Faulted;
         _deviceWatcher.DevicesChanged += DeviceWatcher_DevicesChanged;
         SourceInitialized += MainWindow_SourceInitialized;
@@ -216,7 +218,9 @@ public partial class MainWindow : Window
             StartButton.IsEnabled = false;
             CommitOutputSelection();
             SetStatus("Starting", "Opening both Bluetooth endpoints and the protected system-audio capture path…", "#60D2FF");
-            await _router.StartAsync(options!);
+            AppLog.Info($"Starting: A delay {options!.DelayAMilliseconds} ms, B delay {options.DelayBMilliseconds} ms, buffer {options.RenderLatencyMilliseconds} ms, reconnect={isReconnect}");
+            await _router.StartAsync(options);
+            AppLog.Info("Streaming started");
             _wantedRunning = true;
             _reconnectTimer.Stop();
             SetStreamingUi(true);
@@ -225,6 +229,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            AppLog.Error("Start failed", ex);
             _router.Stop();
             SetStreamingUi(false);
             SetStatus("Could not start", FriendlyAudioError(ex), "#FF6B7A");
@@ -242,6 +247,7 @@ public partial class MainWindow : Window
     {
         _wantedRunning = false;
         _reconnectTimer.Stop();
+        LogStop("user");
         _router.Stop();
         SetStreamingUi(false);
         SetStatus("Stopped", "The audio devices have been released.", "#6F809D");
@@ -278,7 +284,7 @@ public partial class MainWindow : Window
             SetStatus("Calibration finished", "If one device sounded first, add delay to that device and test again.", "#41D99A");
         }
         catch (OperationCanceledException) { SetStatus("Calibration stopped", "The calibration test was cancelled.", "#6F809D"); }
-        catch (Exception ex) { SetStatus("Calibration failed", FriendlyAudioError(ex), "#FF6B7A"); }
+        catch (Exception ex) { AppLog.Error("Calibration failed", ex); SetStatus("Calibration failed", FriendlyAudioError(ex), "#FF6B7A"); }
         finally
         {
             _calibrationCancellation?.Dispose();
@@ -288,6 +294,12 @@ public partial class MainWindow : Window
             CalibrationButton.IsEnabled = true;
             StartButton.IsEnabled = true;
         }
+    }
+
+    private void LogStop(string reason)
+    {
+        if (_router.IsRunning)
+            AppLog.Info($"Streaming stopped ({reason}); drift corrections this session: {_router.DriftDropCount}");
     }
 
     private void ResetCalibration_Click(object sender, RoutedEventArgs e)
@@ -305,6 +317,8 @@ public partial class MainWindow : Window
             if (!_router.IsRunning)
                 return;
             // Stop off the UI thread: it waits on the lifecycle gate, which StartAsync may hold.
+            AppLog.Warn($"Router fault: {message}");
+            LogStop("fault");
             await Task.Run(_router.Stop);
             SetStreamingUi(false);
             SetStatus("Connection lost", message, "#FF6B7A");
@@ -318,17 +332,30 @@ public partial class MainWindow : Window
 
     private void DeviceWatcher_DevicesChanged(object? sender, EventArgs e)
     {
+        // Windows fires several notifications per connect/disconnect; wait for the burst to settle.
         Dispatcher.BeginInvoke(() =>
         {
-            if (_router.IsRunning)
-            {
-                DiagnosticText.Text = "Windows reported a playback-device change. Monitoring both active streams…";
-                return;
-            }
-
-            try { RefreshDeviceLists(); }
-            catch (Exception ex) { SetStatus("Device update failed", ex.Message, "#FF7586"); }
+            _deviceChangeTimer.Stop();
+            _deviceChangeTimer.Start();
         });
+    }
+
+    private void DeviceChangeTimer_Tick(object? sender, EventArgs e)
+    {
+        _deviceChangeTimer.Stop();
+        AppLog.Info("Playback devices changed" + (_router.IsRunning ? " (streaming; list not refreshed)" : ""));
+        if (_router.IsRunning)
+        {
+            DiagnosticText.Text = "Windows reported a playback-device change. Monitoring both active streams…";
+            return;
+        }
+
+        try { RefreshDeviceLists(); }
+        catch (Exception ex)
+        {
+            AppLog.Error("Device list refresh failed", ex);
+            SetStatus("Device update failed", ex.Message, "#FF7586");
+        }
     }
 
     private async void ReconnectTimer_Tick(object? sender, EventArgs e)
@@ -455,7 +482,11 @@ public partial class MainWindow : Window
         _settings.ShowUnavailableDevices = ShowUnavailableCheck.IsChecked == true;
         ReadAppearanceSettings();
         try { _settingsService.Save(_settings); }
-        catch (Exception ex) { DiagnosticText.Text = $"Settings could not be saved: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            AppLog.Error("Settings save failed", ex);
+            DiagnosticText.Text = $"Settings could not be saved: {ex.Message}";
+        }
     }
 
     private int SelectedLatency()
@@ -503,6 +534,7 @@ public partial class MainWindow : Window
         _calibrationCancellation?.Cancel();
         _diagnosticTimer.Stop();
         _reconnectTimer.Stop();
+        _deviceChangeTimer.Stop();
         _saveTimer.Stop();
         SaveSettings();
         SystemParameters.StaticPropertyChanged -= SystemParameters_StaticPropertyChanged;
