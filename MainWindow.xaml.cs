@@ -27,6 +27,8 @@ public partial class MainWindow : Window
     private AppSettings _settings = new();
     private bool _initializing = true;
     private bool _refreshing;
+    private bool _starting;
+    private bool _closeRequested;
     private bool _wantedRunning;
     private bool _calibrating;
     private CancellationTokenSource? _calibrationCancellation;
@@ -208,6 +210,7 @@ public partial class MainWindow : Window
             SetStatus("Needs setup", validationMessage, "#FFB84D");
             return;
         }
+        _starting = true;
         try
         {
             StartButton.IsEnabled = false;
@@ -227,6 +230,12 @@ public partial class MainWindow : Window
             SetStatus("Could not start", FriendlyAudioError(ex), "#FF6B7A");
             if (_wantedRunning && AutoReconnectCheck.IsChecked == true) _reconnectTimer.Start();
         }
+        finally
+        {
+            _starting = false;
+            if (_closeRequested)
+                Close();
+        }
     }
 
     private void Stop_Click(object sender, RoutedEventArgs e)
@@ -241,7 +250,11 @@ public partial class MainWindow : Window
 
     private async void Calibration_Click(object sender, RoutedEventArgs e)
     {
-        if (_calibrating) return;
+        if (_calibrating)
+        {
+            _calibrationCancellation?.Cancel();
+            return;
+        }
         if (_router.IsRunning)
         {
             SetStatus("Stop first", "Stop streaming before playing the sync test.", "#FFB84D");
@@ -254,7 +267,7 @@ public partial class MainWindow : Window
         }
         _calibrating = true;
         _calibrationCancellation = new CancellationTokenSource();
-        CalibrationButton.IsEnabled = false;
+        CalibrationButton.Content = "■  Stop test";
         StartButton.IsEnabled = false;
         SetStatus("Calibrating", "Listen for four short pulses from both devices.", "#56C7FF");
         try
@@ -271,6 +284,7 @@ public partial class MainWindow : Window
             _calibrationCancellation?.Dispose();
             _calibrationCancellation = null;
             _calibrating = false;
+            CalibrationButton.Content = "▶  Play sync test";
             CalibrationButton.IsEnabled = true;
             StartButton.IsEnabled = true;
         }
@@ -328,7 +342,9 @@ public partial class MainWindow : Window
         if (!_router.IsRunning) return;
         var buffers = _router.BufferedMilliseconds;
         var signal = _router.HasRecentAudioSignal ? "signal active" : "waiting for Windows audio";
-        BufferText.Text = $"A {buffers.A:0} ms  ·  B {buffers.B:0} ms  ·  {signal}";
+        var drops = _router.DriftDropCount;
+        BufferText.Text = $"A {buffers.A:0} ms  ·  B {buffers.B:0} ms  ·  {signal}" +
+                          (drops > 0 ? $"  ·  {drops} drift correction{(drops == 1 ? "" : "s")}" : "");
     }
 
     private bool TryCreateOptions(out RoutingOptions? options, out string message)
@@ -474,6 +490,15 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
+        // Stopping the router waits on a lock the in-flight start holds, and that start needs this thread to finish.
+        // Defer the close until the start returns instead of blocking here.
+        if (_starting)
+        {
+            _closeRequested = true;
+            _wantedRunning = false;
+            e.Cancel = true;
+            return;
+        }
         _wantedRunning = false;
         _calibrationCancellation?.Cancel();
         _diagnosticTimer.Stop();
