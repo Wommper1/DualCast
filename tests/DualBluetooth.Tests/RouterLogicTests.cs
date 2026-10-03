@@ -89,24 +89,16 @@ public sealed class RouterLogicTests
     }
 
     [Fact]
-    public void CreateBuffer_PrefillsRequestedSilence()
-    {
-        var buffer = DualAudioRouter.CreateBuffer(Format, 100);
-
-        Assert.Equal(100, buffer.BufferedDuration.TotalMilliseconds, precision: 1);
-    }
-
-    [Fact]
     public void AddUnlessDrifted_AddsWhileWithinTolerance_ThenDropsAndHoldsLevel()
     {
-        var buffer = DualAudioRouter.CreateBuffer(Format, 100);
+        var buffer = new PrimedBuffer(Format, 100);
         var packet = new byte[(int)(Format.AverageBytesPerSecond * 0.010)];
 
         Assert.False(DualAudioRouter.AddUnlessDrifted(buffer, 100, packet));
-        Assert.Equal(110, buffer.BufferedDuration.TotalMilliseconds, precision: 1);
+        Assert.Equal(10, buffer.BufferedDuration.TotalMilliseconds, precision: 1);
 
         while (buffer.BufferedDuration.TotalMilliseconds <= 100 + DualAudioRouter.MaxDriftMilliseconds)
-            buffer.AddSamples(packet, 0, packet.Length);
+            buffer.AddSamples(packet);
         var full = buffer.BufferedDuration.TotalMilliseconds;
 
         Assert.True(DualAudioRouter.AddUnlessDrifted(buffer, 100, packet));

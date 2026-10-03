@@ -7,8 +7,9 @@ public static class AppLog
 {
     private const long MaxBytes = 512 * 1024;
     private static readonly object Gate = new();
-    private static readonly string Directory_ = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DualBluetooth", "logs");
+    // DUALCAST_LOG_DIR lets tests keep their noise out of the real log.
+    private static readonly string Directory_ = Environment.GetEnvironmentVariable("DUALCAST_LOG_DIR")
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DualBluetooth", "logs");
 
     public static string FilePath { get; } = Path.Combine(Directory_, "dualcast.log");
 

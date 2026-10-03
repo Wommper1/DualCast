@@ -299,7 +299,7 @@ public partial class MainWindow : Window
     private void LogStop(string reason)
     {
         if (_router.IsRunning)
-            AppLog.Info($"Streaming stopped ({reason}); drift corrections this session: {_router.DriftDropCount}");
+            AppLog.Info($"Streaming stopped ({reason}); drift corrections: {_router.DriftDropCount}; gaps A/B: {_router.UnderrunCounts.A}/{_router.UnderrunCounts.B}");
     }
 
     private void ResetCalibration_Click(object sender, RoutedEventArgs e)
@@ -370,7 +370,9 @@ public partial class MainWindow : Window
         var buffers = _router.BufferedMilliseconds;
         var signal = _router.HasRecentAudioSignal ? "signal active" : "waiting for Windows audio";
         var drops = _router.DriftDropCount;
+        var underruns = _router.UnderrunCounts;
         BufferText.Text = $"A {buffers.A:0} ms  ·  B {buffers.B:0} ms  ·  {signal}" +
+                          (underruns.A + underruns.B > 0 ? $"  ·  gaps A {underruns.A} / B {underruns.B}" : "") +
                           (drops > 0 ? $"  ·  {drops} drift correction{(drops == 1 ? "" : "s")}" : "");
     }
 

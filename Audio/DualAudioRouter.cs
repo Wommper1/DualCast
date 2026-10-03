@@ -14,8 +14,8 @@ public sealed class DualAudioRouter : IDisposable
     private WasapiRecorder? _capture;
     private WasapiPlayer? _outputA;
     private WasapiPlayer? _outputB;
-    private BufferedWaveProvider? _bufferA;
-    private BufferedWaveProvider? _bufferB;
+    private PrimedBuffer? _bufferA;
+    private PrimedBuffer? _bufferB;
     private VolumeSampleProvider? _volumeA;
     private VolumeSampleProvider? _volumeB;
     private MMDevice? _outputDeviceA;
@@ -44,6 +44,15 @@ public sealed class DualAudioRouter : IDisposable
 
     /// <summary>Capture packets skipped because an output's clock fell behind the capture clock.</summary>
     public long DriftDropCount => Interlocked.Read(ref _driftDropCount);
+
+    public (long A, long B) UnderrunCounts
+    {
+        get
+        {
+            lock (_bufferGate)
+                return (_bufferA?.UnderrunCount ?? 0, _bufferB?.UnderrunCount ?? 0);
+        }
+    }
 
     public (double A, double B) BufferedMilliseconds
     {
@@ -140,8 +149,8 @@ public sealed class DualAudioRouter : IDisposable
                 _targetBufferAMilliseconds = options.DelayAMilliseconds + options.RenderLatencyMilliseconds;
                 _targetBufferBMilliseconds = options.DelayBMilliseconds + options.RenderLatencyMilliseconds;
                 Interlocked.Exchange(ref _driftDropCount, 0);
-                _bufferA = CreateBuffer(format, _targetBufferAMilliseconds);
-                _bufferB = CreateBuffer(format, _targetBufferBMilliseconds);
+                _bufferA = new PrimedBuffer(format, _targetBufferAMilliseconds);
+                _bufferB = new PrimedBuffer(format, _targetBufferBMilliseconds);
                 _volumeA = new VolumeSampleProvider(_bufferA.ToSampleProvider()) { Volume = ClampVolume(options.VolumeA) };
                 _volumeB = new VolumeSampleProvider(_bufferB.ToSampleProvider()) { Volume = ClampVolume(options.VolumeB) };
 
@@ -238,20 +247,6 @@ public sealed class DualAudioRouter : IDisposable
             throw new InvalidOperationException("Calibration delays must be between 0 and 2000 milliseconds.");
     }
 
-    internal static BufferedWaveProvider CreateBuffer(WaveFormat format, double delayMilliseconds)
-    {
-        var buffer = new BufferedWaveProvider(format, TimeSpan.FromSeconds(12))
-        {
-            DiscardOnBufferOverflow = true,
-            ReadFully = true
-        };
-        var silenceLength = (int)(format.AverageBytesPerSecond * delayMilliseconds / 1000d);
-        silenceLength -= silenceLength % format.BlockAlign;
-        if (silenceLength > 0)
-            buffer.AddSamples(new byte[silenceLength]);
-        return buffer;
-    }
-
     private void Capture_DataAvailable(ReadOnlySpan<byte> buffer, AudioClientBufferFlags flags, long devicePosition, long qpcPosition)
     {
         if (!IsRunning)
@@ -268,7 +263,7 @@ public sealed class DualAudioRouter : IDisposable
     }
 
     // An output slower than the capture clock lets its queue grow without bound; skip a packet to pull it back.
-    internal static bool AddUnlessDrifted(BufferedWaveProvider? queue, double targetMilliseconds, ReadOnlySpan<byte> buffer)
+    internal static bool AddUnlessDrifted(PrimedBuffer? queue, double targetMilliseconds, ReadOnlySpan<byte> buffer)
     {
         if (queue is null)
             return false;
