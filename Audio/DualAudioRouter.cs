@@ -25,6 +25,8 @@ public sealed class DualAudioRouter : IDisposable
     private double _targetBufferAMilliseconds;
     private double _targetBufferBMilliseconds;
     private long _driftDropCount;
+    private byte[] _silencePacket = [];
+    private int _disposed;
 
     // How far past its starting level a queue may grow before incoming audio is dropped.
     internal const double MaxDriftMilliseconds = 120;
@@ -192,6 +194,15 @@ public sealed class DualAudioRouter : IDisposable
 
     public void Stop()
     {
+        // After Dispose there is nothing left to stop; a late fault handler must not trip over the disposed lock.
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+        try { StopLocked(); }
+        catch (ObjectDisposedException) { } // Dispose won the race for the lock; it stops the router itself.
+    }
+
+    private void StopLocked()
+    {
         _lifecycleGate.Wait();
         try { StopCore(); }
         finally { _lifecycleGate.Release(); }
@@ -253,13 +264,25 @@ public sealed class DualAudioRouter : IDisposable
             return;
         if ((flags & AudioClientBufferFlags.Silent) == 0 && ContainsAudibleSignal(buffer))
             Volatile.Write(ref _lastAudioSignalTicks, DateTime.UtcNow.Ticks);
+        // WASAPI says to ignore a packet's contents when it is flagged silent; they are not guaranteed to be zero.
+        var audio = SilentIfFlagged(buffer, flags, ref _silencePacket);
         lock (_bufferGate)
         {
-            var droppedA = AddUnlessDrifted(_bufferA, _targetBufferAMilliseconds, buffer);
-            var droppedB = AddUnlessDrifted(_bufferB, _targetBufferBMilliseconds, buffer);
+            var droppedA = AddUnlessDrifted(_bufferA, _targetBufferAMilliseconds, audio);
+            var droppedB = AddUnlessDrifted(_bufferB, _targetBufferBMilliseconds, audio);
             if (droppedA || droppedB)
                 Interlocked.Increment(ref _driftDropCount);
         }
+    }
+
+    /// <summary>The packet itself, or an equally long run of silence when WASAPI flagged it silent.</summary>
+    internal static ReadOnlySpan<byte> SilentIfFlagged(ReadOnlySpan<byte> buffer, AudioClientBufferFlags flags, ref byte[] silence)
+    {
+        if ((flags & AudioClientBufferFlags.Silent) == 0)
+            return buffer;
+        if (silence.Length < buffer.Length)
+            silence = new byte[buffer.Length]; // never written to, so always zeros
+        return silence.AsSpan(0, buffer.Length);
     }
 
     // An output slower than the capture clock lets its queue grow without bound; skip a packet to pull it back.
@@ -370,7 +393,9 @@ public sealed class DualAudioRouter : IDisposable
 
     public void Dispose()
     {
-        Stop();
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+        StopLocked();
         _lifecycleGate.Dispose();
     }
 }

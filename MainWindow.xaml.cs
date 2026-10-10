@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private bool _closeRequested;
     private bool _wantedRunning;
     private bool _calibrating;
+    private IReadOnlyList<AudioDeviceInfo> _devices = [];
     private CancellationTokenSource? _calibrationCancellation;
 
     public MainWindow()
@@ -66,7 +67,13 @@ public partial class MainWindow : Window
         AutoReconnectCheck.IsChecked = _settings.AutoReconnect;
         ShowUnavailableCheck.IsChecked = _settings.ShowUnavailableDevices;
         SelectLatency(_settings.RenderLatencyMilliseconds);
-        RefreshDeviceLists();
+        try { RefreshDeviceLists(); }
+        catch (Exception ex)
+        {
+            // Windows audio may not be answering yet; the rest of the window must still finish setting up.
+            AppLog.Error("Device list failed at start-up", ex);
+            SetStatus("Device scan failed", ex.Message, "#FF6B7A");
+        }
         UpdateValueLabels();
         _initializing = false;
         _diagnosticTimer.Start();
@@ -76,6 +83,7 @@ public partial class MainWindow : Window
     private void RefreshDeviceLists()
     {
         var devices = DualAudioRouter.GetRenderDevices(_settings.FavoriteDeviceIds, ShowUnavailableCheck.IsChecked == true);
+        _devices = devices;
         // The saved choice wins over the on-screen fallback so a temporarily missing device is not forgotten.
         var oldA = _settings.OutputADeviceId ?? SelectedId(OutputACombo);
         var oldB = _settings.OutputBDeviceId ?? SelectedId(OutputBCombo);
@@ -207,7 +215,26 @@ public partial class MainWindow : Window
 
     private async Task StartStreamingAsync(bool isReconnect)
     {
-        if (!TryCreateOptions(out var options, out var validationMessage))
+        RoutingOptions? options;
+        string validationMessage;
+        if (isReconnect)
+        {
+            // Go by the saved outputs and a fresh device list, and keep trying while a device is still away.
+            var plan = PlanReconnect(out options);
+            if (plan.State == ReconnectState.NotConfigured)
+            {
+                _wantedRunning = false;
+                SetStatus("Needs setup", plan.Message, "#FFB84D");
+                return;
+            }
+            if (plan.State == ReconnectState.Waiting)
+            {
+                SetStatus("Reconnecting", plan.Message, "#FFB84D");
+                if (_wantedRunning && AutoReconnectCheck.IsChecked == true) _reconnectTimer.Start();
+                return;
+            }
+        }
+        else if (!TryCreateOptions(out options, out validationMessage))
         {
             SetStatus("Needs setup", validationMessage, "#FFB84D");
             return;
@@ -220,11 +247,16 @@ public partial class MainWindow : Window
             SetStatus("Starting", "Opening both Bluetooth endpoints and the protected system-audio capture path…", "#60D2FF");
             AppLog.Info($"Starting: A delay {options!.DelayAMilliseconds} ms, B delay {options.DelayBMilliseconds} ms, buffer {options.RenderLatencyMilliseconds} ms, reconnect={isReconnect}");
             await _router.StartAsync(options);
+            // A fault can land while the start is still finishing; do not announce streaming over a stopped router.
+            if (!_router.IsRunning)
+                throw new InvalidOperationException("Audio stopped as soon as it started.");
             AppLog.Info("Streaming started");
             _wantedRunning = true;
             _reconnectTimer.Stop();
             SetStreamingUi(true);
-            SetStatus("Streaming", isReconnect ? "Devices reconnected. Streaming resumed." : "Streaming system audio to both outputs.", "#41D99A");
+            var advice = OutputAdvice.DefaultDeviceEcho(_devices, options.OutputADeviceId, options.OutputBDeviceId);
+            var streaming = isReconnect ? "Devices reconnected. Streaming resumed." : "Streaming system audio to both outputs.";
+            SetStatus("Streaming", advice is null ? streaming : $"{streaming} {advice}", advice is null ? "#41D99A" : "#FFB84D");
             SaveSettings();
         }
         catch (Exception ex)
@@ -340,7 +372,7 @@ public partial class MainWindow : Window
         });
     }
 
-    private void DeviceChangeTimer_Tick(object? sender, EventArgs e)
+    private async void DeviceChangeTimer_Tick(object? sender, EventArgs e)
     {
         _deviceChangeTimer.Stop();
         AppLog.Info("Playback devices changed" + (_router.IsRunning ? " (streaming; list not refreshed)" : ""));
@@ -355,6 +387,13 @@ public partial class MainWindow : Window
         {
             AppLog.Error("Device list refresh failed", ex);
             SetStatus("Device update failed", ex.Message, "#FF7586");
+        }
+
+        // A device that was away may just have come back: try now instead of waiting for the next five-second tick.
+        if (_wantedRunning && AutoReconnectCheck.IsChecked == true && !_router.IsRunning && !_starting && !_calibrating)
+        {
+            _reconnectTimer.Stop();
+            await StartStreamingAsync(isReconnect: true);
         }
     }
 
@@ -374,6 +413,36 @@ public partial class MainWindow : Window
         BufferText.Text = $"A {buffers.A:0} ms  ·  B {buffers.B:0} ms  ·  {signal}" +
                           (underruns.A + underruns.B > 0 ? $"  ·  gaps A {underruns.A} / B {underruns.B}" : "") +
                           (drops > 0 ? $"  ·  {drops} drift correction{(drops == 1 ? "" : "s")}" : "");
+    }
+
+    private ReconnectPlan PlanReconnect(out RoutingOptions? options)
+    {
+        options = null;
+        IReadOnlyList<AudioDeviceInfo> devices;
+        try
+        {
+            devices = DualAudioRouter.GetRenderDevices(_settings.FavoriteDeviceIds, includeUnavailable: true);
+            RefreshDeviceLists();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error("Device scan failed while reconnecting", ex);
+            return new ReconnectPlan(ReconnectState.Waiting, "Windows audio is not answering yet; trying again shortly…");
+        }
+        var plan = ReconnectPlanner.Plan(_settings.OutputADeviceId, _settings.OutputBDeviceId, devices);
+        if (plan.State == ReconnectState.Ready)
+            options = new RoutingOptions(_settings.OutputADeviceId!, _settings.OutputBDeviceId!, (int)DelayASlider.Value,
+                (int)DelayBSlider.Value, (float)(VolumeASlider.Value / 100d), (float)(VolumeBSlider.Value / 100d), SelectedLatency());
+        return plan;
+    }
+
+    private void ShowOutputAdvice()
+    {
+        if (_router.IsRunning || _starting || _calibrating)
+            return;
+        var advice = OutputAdvice.DefaultDeviceEcho(_devices, SelectedId(OutputACombo), SelectedId(OutputBCombo));
+        if (advice is not null)
+            SetStatus("Heads up", advice, "#FFB84D");
     }
 
     private bool TryCreateOptions(out RoutingOptions? options, out string message)
@@ -453,6 +522,7 @@ public partial class MainWindow : Window
             return;
         if (ReferenceEquals(sender, OutputACombo)) _settings.OutputADeviceId = SelectedId(OutputACombo);
         else if (ReferenceEquals(sender, OutputBCombo)) _settings.OutputBDeviceId = SelectedId(OutputBCombo);
+        ShowOutputAdvice();
         QueueSave();
     }
 
