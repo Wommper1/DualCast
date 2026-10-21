@@ -1,6 +1,11 @@
 # Changelog
 
-## 1.0.0 (not yet released)
+## 1.0.1 (pre-release)
+
+- Updates the audio library NAudio from 3.0.1 to 3.3.0. Nothing else in the app changed. It builds with no warnings and all 46 tests pass, but streaming has not been tested on real Bluetooth hardware with either version yet.
+- NAudio's Asio, Dmo and WinForms parts are no longer pulled in, so there are fewer dependencies.
+
+## 1.0.0 (pre-release, 2026-10-21)
 
 First public version. Release as a **pre-release** until the two-device hardware checks in [VERIFICATION.md](VERIFICATION.md) are done.
 

@@ -10,7 +10,7 @@ What was checked, what was not. Update this before every release.
 | Secrets sweep of the working tree, full git history and stashes | Nothing found |
 | `secret-guard` over the whole history | Clean |
 | Commit hook | Blocks a staged fake token and a `.pem` file in a throwaway repo; allows a clean commit |
-| Known-vulnerable or deprecated NuGet packages | None (NAudio 3.0.1; 3.3.0 is available but not applied, see below) |
+| Known-vulnerable or deprecated NuGet packages | None (NAudio 3.3.0) |
 | Personal data in the built `.exe` and `.pdb` | None after the `PathMap` setting; the older builds in `dist\` contained the Windows user name and folder path and must not be shipped |
 | Network code in the source | None |
 
@@ -25,7 +25,7 @@ What was checked, what was not. Update this before every release.
 | [ ] Run the release zip on a PC that has only the .NET 10 Desktop Runtime | Confirms no hidden dependency on this PC |
 | [ ] Windows 10 (build 19041 or later) | Built and tested on Windows 11 only |
 | [ ] High-contrast mode and a screen reader | Only checked visually |
-| [ ] NAudio 3.3.0 | Update only after a pass of the streaming checks above, then repeat them |
+| [ ] Run all the streaming checks above on 1.0.1 | NAudio moved from 3.0.1 to 3.3.0 and streaming has not been tested on either version |
 
 ## Known limits
 
