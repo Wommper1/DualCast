@@ -4,7 +4,7 @@ DualCast sends the Windows system mix to two Bluetooth playback devices at the s
 
 ## Run it
 
-Open `dist/DualCast-OneFile/DualBluetooth.exe`, then:
+Install the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64) if you do not have it, unzip the release, and open `DualBluetooth.exe`. Windows SmartScreen may warn because the file is not code-signed; compare its zip with `SHA256SUMS.txt` on the release page first. Then:
 
 1. Pair and connect both Bluetooth devices in Windows.
 2. Choose two different devices under **Output A** and **Output B**. Use **★ Favorite** to pin a device to the top of the lists, and **Show disconnected** to keep a paired device visible while it is off. Your saved choice is remembered even while a device is disconnected.
@@ -32,7 +32,7 @@ For full-quality audio, use Stereo/A2DP playback and avoid enabling a Bluetooth 
 ## Requirements and limitations
 
 - Windows 10 version 2004 (build 19041) or later.
-- .NET 10 Desktop Runtime when using the framework-dependent package in this repository.
+- .NET 10 Desktop Runtime (x64). The release package does not bundle it.
 - The Bluetooth adapter and driver must support two active playback connections. DualCast cannot add Bluetooth LE Audio or Auracast support to unsupported hardware.
 - WASAPI loopback does not expose DRM-protected streams. Applications using exclusive-mode audio can also bypass the shared system mix.
 - Different device clocks can drift during long sessions. DualCast keeps an independent queue per output with a startup cushion. If an output's queue grows more than about 120 ms past its starting level, DualCast skips a small packet of audio to pull it back, which can cause a faint click and is counted under Session health. A device that runs faster than the capture clock cannot be corrected this way and may still need a stream restart.
@@ -41,7 +41,7 @@ For full-quality audio, use Stereo/A2DP playback and avoid enabling a Bluetooth 
 
 Use the gear button in the top-right corner to choose a dark color theme, accent color, text size, stronger high-visibility borders, and always-on-top behavior. DualCast defaults to Graphite with large text, keeps its Windows title bar dark, and follows Windows high-contrast mode.
 
-The supported packaged launcher is `dist/DualCast-OneFile/DualBluetooth.exe`. Keep that exact filename: Windows application control may block renamed copies.
+The packaged launcher is `DualBluetooth.exe` from the release zip. Keep that exact filename: Windows application control may block renamed copies.
 
 ## Build from source
 
@@ -49,8 +49,14 @@ The supported packaged launcher is `dist/DualCast-OneFile/DualBluetooth.exe`. Ke
 dotnet restore DualBluetooth.slnx --configfile NuGet.Config
 dotnet build DualBluetooth.slnx -c Release --no-restore
 dotnet publish DualBluetooth.csproj -c Release --no-restore -o dist/DualCast
+# Or build the release zip, checksum and personal-data check in one go:
+powershell -ExecutionPolicy Bypass -File scripts\build-release.ps1
 ```
 
 Run the tests with `dotnet test tests/DualBluetooth.Tests`. They cover settings migration and saving, calibration-signal timing, input validation, drift correction, and device ordering. Streaming itself needs real Bluetooth hardware and is not covered.
 
 The app uses WPF on .NET 10 and NAudio 3's modern WASAPI recorder/player APIs. Capture and rendering use event-driven callbacks and MMCSS audio-thread priority. Shared-mode WASAPI performs output-format conversion for different devices.
+
+## More
+
+[Privacy](PRIVACY.md) | [Security](SECURITY.md) | [What was tested](VERIFICATION.md) | [Changelog](CHANGELOG.md) | [Third-party notices](THIRD_PARTY_NOTICES.md) | [MIT license](LICENSE)

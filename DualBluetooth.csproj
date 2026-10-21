@@ -9,6 +9,17 @@
     <AssemblyName>DualBluetooth</AssemblyName>
     <RootNamespace>DualBluetooth</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>DualCast</Product>
+    <AssemblyTitle>DualCast</AssemblyTitle>
+    <Company>The Level Everything Company</Company>
+    <Copyright>Copyright (c) 2026 The Level Everything Company</Copyright>
+    <Description>Plays the Windows system audio on two Bluetooth devices at once, with a sync delay for each.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- Keep the build machine's user name and folders out of the exe and its pdb. -->
+    <PathMap>$(MSBuildProjectDirectory)=/_/</PathMap>
   </PropertyGroup>
 
   <ItemGroup>
