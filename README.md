@@ -2,6 +2,8 @@
 
 DualCast sends the Windows system mix to two Bluetooth playback devices at the same time. Each output has independent volume and synchronization delay controls.
 
+> **Early pre-release (1.0.x).** Tested on Windows 11. Streaming to two real Bluetooth devices is still being tested; see [VERIFICATION.md](VERIFICATION.md) for what has and has not been checked.
+
 ## Run it
 
 Install the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (x64) if you do not have it, unzip the release, and open `DualBluetooth.exe`. Windows SmartScreen may warn because the file is not code-signed; compare its zip with `SHA256SUMS.txt` on the release page first. Then:
@@ -11,6 +13,12 @@ Install the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotn
 3. Click **Start streaming**.
 
 DualCast uses Windows process-loopback capture to collect system audio while excluding DualCast's own output. There is no separate capture-source device and no software feedback loop to configure.
+
+## Avoid hearing everything twice
+
+Windows keeps playing your audio on its **default output** as usual. DualCast captures that audio and plays a delayed copy to Output A and Output B. So if Output A or B is also the Windows default, you hear that device twice, as an echo. DualCast shows a warning when it sees this.
+
+To avoid it, make a third device the Windows default (for example your PC speakers, turned down) in **Windows sound settings**, then choose your two Bluetooth devices in DualCast. The Windows volume controls act on the default device, so use DualCast's two volume sliders for the Bluetooth devices.
 
 ## Calibrate synchronization
 
@@ -28,6 +36,21 @@ Bluetooth delay can change after a reconnect. Small recalibrations are normal, e
 - **Session health:** Shows each output's queued audio, whether DualCast recently detected a Windows audio signal, and how many drift corrections have been applied.
 
 For full-quality audio, use Stereo/A2DP playback and avoid enabling a Bluetooth headset microphone. Some Bluetooth hardware switches into a lower-quality communications profile when its microphone is active.
+
+## Troubleshooting
+
+| What you see | What to try |
+| --- | --- |
+| "Could not start" | Both devices must show as connected. Open **Bluetooth devices**, connect them, then click **Refresh devices**. Close other apps that use a device exclusively. |
+| Crackling or dropouts | Raise the **Stability buffer** to 150 or 250 ms, move closer to the PC, and keep Bluetooth headset microphones off so the devices stay in Stereo/A2DP mode. |
+| One device is late or louder | Run the sync test, add delay to the device you hear first, and use the two volume sliders. |
+| A faint click every few seconds | Two Bluetooth devices run on slightly different clocks, so DualCast occasionally skips a tiny packet. **Session health** counts these as drift corrections. This is a known limit of the current version. |
+| No sound on either device | Check that Session health says "signal active" while something is playing. Copy-protected (DRM) audio and apps using exclusive-mode audio are not captured. |
+| Windows SmartScreen warns | The program is not code-signed yet. Compare the zip with `SHA256SUMS.txt` on the release page before running it. |
+
+## Reporting a problem
+
+Open an issue at https://github.com/Wommper1/DualCast/issues and fill in the form. It asks for the DualCast version (right-click `DualBluetooth.exe`, Properties, Details), your Windows version, your Bluetooth adapter and the two devices. The log is at `%LOCALAPPDATA%\DualBluetooth\logs\dualcast.log`; read it before sharing it, because error text can include device names. For security problems, use the private route in [SECURITY.md](SECURITY.md) instead of a public issue.
 
 ## Requirements and limitations
 
