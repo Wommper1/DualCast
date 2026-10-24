@@ -13,6 +13,8 @@ What was checked, what was not. Update this before every release.
 | Known-vulnerable or deprecated NuGet packages | None (NAudio 3.3.0) |
 | Personal data in the built `.exe` and `.pdb` | None after the `PathMap` setting; the older builds in `dist\` contained the Windows user name and folder path and must not be shipped |
 | Network code in the source | None |
+| Launch test of the downloaded 1.0.1 zip (Windows 11, .NET SDK installed) | Window opens, stays up, file version reads 1.0.1, closes cleanly with exit code 0, no errors in the log, settings file unchanged |
+| Screen-reader names | All 26 buttons, lists, sliders and tick boxes in the window have a name (checked in the XAML; not tried with a real screen reader) |
 
 ## Not checked: needs you and the hardware
 
@@ -23,6 +25,7 @@ What was checked, what was not. Update this before every release.
 | [ ] Switch one device off and on during streaming (auto-reconnect) | Only the planning logic is unit-tested |
 | [ ] Drift over a long session (2 hours) | Device clocks differ |
 | [ ] Run the release zip on a PC that has only the .NET 10 Desktop Runtime | Confirms no hidden dependency on this PC |
+| [ ] Echo check: set the Windows default output to a third device turned down, then stream; both Bluetooth devices should play at full level. Then set the default to Output A; the app should warn about an echo | The README advice and the in-app warning depend on how Windows captures audio |
 | [ ] Windows 10 (build 19041 or later) | Built and tested on Windows 11 only |
 | [ ] High-contrast mode and a screen reader | Only checked visually |
 | [ ] Run all the streaming checks above on 1.0.1 | NAudio moved from 3.0.1 to 3.3.0 and streaming has not been tested on either version |
@@ -30,4 +33,5 @@ What was checked, what was not. Update this before every release.
 ## Known limits
 
 - The executable is unsigned, so SmartScreen may warn.
+- Drift correction skips a tiny packet when an output's clock runs behind. In an early-build log it applied 25 corrections in under 3 minutes, so occasional faint clicks are expected. Smooth resampling would be the proper fix and is not in 1.0.x.
 - The Bluetooth adapter and driver must support two active playback connections; DualCast cannot add that.
