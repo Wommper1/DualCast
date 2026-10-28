@@ -1,5 +1,7 @@
 # DualCast
 
+[Project case study](CASE_STUDY.md) · [Meet Alex Shade](https://github.com/Wommper1) · [The Level Everything Company](https://leveleverythingcompany.github.io/)
+
 DualCast sends the Windows system mix to two Bluetooth playback devices at the same time. Each output has independent volume and synchronization delay controls.
 
 > **Early pre-release (1.0.x).** Tested on Windows 11. Streaming to two real Bluetooth devices is still being tested; see [VERIFICATION.md](VERIFICATION.md) for what has and has not been checked.
